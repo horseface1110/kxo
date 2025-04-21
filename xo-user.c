@@ -82,23 +82,21 @@ static void listen_keyboard_handler(void)
     close(attr_fd);
 }
 
+
 int main(int argc, char *argv[])
 {
     if (!status_check())
         exit(1);
-
     raw_mode_enable();
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
 
     char display_buf[DRAWBUFFER_SIZE];
-
     fd_set readset;
     int device_fd = open(XO_DEVICE_FILE, O_RDONLY);
     int max_fd = device_fd > STDIN_FILENO ? device_fd : STDIN_FILENO;
     read_attr = true;
     end_attr = false;
-
     while (!end_attr) {
         FD_ZERO(&readset);
         FD_SET(STDIN_FILENO, &readset);
@@ -109,15 +107,15 @@ int main(int argc, char *argv[])
             printf("Error with select system call\n");
             exit(1);
         }
-
         if (FD_ISSET(STDIN_FILENO, &readset)) {
             FD_CLR(STDIN_FILENO, &readset);
             listen_keyboard_handler();
         } else if (read_attr && FD_ISSET(device_fd, &readset)) {
             FD_CLR(device_fd, &readset);
-            printf("\033[H\033[J"); /* ASCII escape code to clear the screen */
+            // printf("\033[H\033[J"); /* ASCII escape code to clear the screen
+            // */
             read(device_fd, display_buf, DRAWBUFFER_SIZE);
-            printf("%s", display_buf);
+
         }
     }
 

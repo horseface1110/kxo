@@ -78,7 +78,7 @@ static int major;
 static struct class *kxo_class;
 static struct cdev kxo_cdev;
 
-static char draw_buffer[DRAWBUFFER_SIZE];
+static char draw_buffer[4];  // 4 bytes is enough to store the position
 
 /* Data are stored into a kfifo buffer before passing them to the userspace */
 static DECLARE_KFIFO_PTR(rx_fifo, unsigned char);
@@ -93,13 +93,21 @@ static DEFINE_MUTEX(read_lock);
 static DECLARE_WAIT_QUEUE_HEAD(rx_wait);
 
 /* Insert the whole chess board into the kfifo buffer */
-static void produce_board(void)
+static void produce_board(uint32_t position)
 {
-    unsigned int len = kfifo_in(&rx_fifo, draw_buffer, sizeof(draw_buffer));
+    memcpy(draw_buffer, &position, sizeof(position));
+    pr_info("kxo: send position to user: %u (0x%x)\n", draw_buffer,
+            draw_buffer);
+    unsigned int len =
+        kfifo_in(&rx_fifo, draw_buffer, sizeof(draw_buffer));  /////  TODO:
+    unsigned char val;
+    kfifo_out_peek(&rx_fifo, &val, sizeof(val));
+    pr_info("kxo: send val to user: %u (0x%x)\n", val, val);
+
     if (unlikely(len < sizeof(draw_buffer)) && printk_ratelimit())
         pr_warn("%s: %zu bytes dropped\n", __func__, sizeof(draw_buffer) - len);
-
-    pr_debug("kxo: %s: in %u/%u bytes\n", __func__, len, kfifo_len(&rx_fifo));
+    pr_debug("kxo: %s: in %u/%u bytes\n", __func__, len,
+             kfifo_len(&rx_fifo));  // 原本是pr_debug
 }
 
 /* Mutex to serialize kfifo writers within the workqueue handler */
@@ -118,31 +126,22 @@ static struct circ_buf fast_buf;
 static char table[N_GRIDS];
 
 /* Draw the board into draw_buffer */
-static int draw_board(char *table)
+static uint32_t draw_board(char *table)
 {
-    int i = 0, k = 0;
-    draw_buffer[i++] = '\n';
-    smp_wmb();
-    draw_buffer[i++] = '\n';
-    smp_wmb();
-
-    while (i < DRAWBUFFER_SIZE) {
-        for (int j = 0; j < (BOARD_SIZE << 1) - 1 && k < N_GRIDS; j++) {
-            draw_buffer[i++] = j & 1 ? '|' : table[k++];
-            smp_wmb();
+    uint32_t position = 0;
+    for (int i = 0; i < N_GRIDS; i++) {
+        uint32_t val = 0;
+        if (table[i] == ' ') {
+            val = 0;
+        } else if (table[i] == 'X') {
+            val = 1;
+        } else if (table[i] == 'O') {
+            val = 2;
         }
-        draw_buffer[i++] = '\n';
-        smp_wmb();
-        for (int j = 0; j < (BOARD_SIZE << 1) - 1; j++) {
-            draw_buffer[i++] = '-';
-            smp_wmb();
-        }
-        draw_buffer[i++] = '\n';
-        smp_wmb();
+        position |= (val << (i * 2));
     }
 
-
-    return 0;
+    return position;
 }
 
 /* Clear all data from the circular buffer fast_buf */
@@ -177,12 +176,12 @@ static void drawboard_work_func(struct work_struct *w)
     read_unlock(&attr_obj.lock);
 
     mutex_lock(&producer_lock);
-    draw_board(table);
+    uint32_t position = draw_board(table);
     mutex_unlock(&producer_lock);
 
     /* Store data to the kfifo buffer */
     mutex_lock(&consumer_lock);
-    produce_board();
+    produce_board(position);
     mutex_unlock(&consumer_lock);
 
     wake_up_interruptible(&rx_wait);
@@ -348,12 +347,15 @@ static void timer_handler(struct timer_list *__timer)
             put_cpu();
 
             mutex_lock(&producer_lock);
-            draw_board(table);
+            uint32_t position =
+                0b10110011100011110000110100001110;  // draw_board(table);
             mutex_unlock(&producer_lock);
 
             /* Store data to the kfifo buffer */
             mutex_lock(&consumer_lock);
-            produce_board();
+            pr_info("kxo: [CPU#%d] position: %llu\n", smp_processor_id(),
+                    position);
+            produce_board(position);
             mutex_unlock(&consumer_lock);
 
             wake_up_interruptible(&rx_wait);
@@ -397,6 +399,7 @@ static ssize_t kxo_read(struct file *file,
 
     do {
         ret = kfifo_to_user(&rx_fifo, buf, count, &read);
+
         if (unlikely(ret < 0))
             break;
         if (read)
@@ -434,6 +437,7 @@ static int kxo_release(struct inode *inode, struct file *filp)
         flush_workqueue(kxo_workqueue);
         fast_buf_clear();
     }
+    attr_obj.end = 48;
     pr_info("release, current cnt: %d\n", atomic_read(&open_cnt));
 
     return 0;
