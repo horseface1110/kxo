@@ -103,12 +103,6 @@ static void produce_board(uint32_t position)
             draw_buffer[0], draw_buffer[1], draw_buffer[2], draw_buffer[3]);
     unsigned int len = kfifo_in(&rx_fifo, draw_buffer,
                                 sizeof(draw_buffer));  //  TODO：傳進去的會壞掉
-    unsigned char peek_buf[4];
-    if (kfifo_len(&rx_fifo) >= 4) {
-        kfifo_out_peek(&rx_fifo, peek_buf, 4);
-        pr_info("aaa peek fifo: %02x %02x %02x %02x\n", peek_buf[0],
-                peek_buf[1], peek_buf[2], peek_buf[3]);
-    }
 
 
     if (unlikely(len < sizeof(draw_buffer)) && printk_ratelimit())

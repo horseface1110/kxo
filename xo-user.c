@@ -8,6 +8,7 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <stdint.h>
 #include "game.h"
 
 #define XO_STATUS_FILE "/sys/module/kxo/initstate"
@@ -82,6 +83,32 @@ static void listen_keyboard_handler(void)
     close(attr_fd);
 }
 
+static char draw_buffer[DRAWBUFFER_SIZE];
+static char table[N_GRIDS];
+
+/* Draw the board into draw_buffer */
+static int draw_board(char *table)
+{
+    int i = 0, k = 0;
+    draw_buffer[i++] = '\n';
+
+    draw_buffer[i++] = '\n';
+
+    while (i < DRAWBUFFER_SIZE) {
+        for (int j = 0; j < (BOARD_SIZE << 1) - 1 && k < N_GRIDS; j++) {
+            draw_buffer[i++] = j & 1 ? '|' : table[k++];
+        }
+        draw_buffer[i++] = '\n';
+
+        for (int j = 0; j < (BOARD_SIZE << 1) - 1; j++) {
+            draw_buffer[i++] = '-';
+        }
+        draw_buffer[i++] = '\n';
+    }
+
+
+    return 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -95,6 +122,8 @@ int main(int argc, char *argv[])
     fd_set readset;
     int device_fd = open(XO_DEVICE_FILE, O_RDONLY);
     int max_fd = device_fd > STDIN_FILENO ? device_fd : STDIN_FILENO;
+    uint8_t mask = (1 << 2) - 1;  // 00000011
+    uint8_t val;
     read_attr = true;
     end_attr = false;
     while (!end_attr) {
@@ -112,10 +141,23 @@ int main(int argc, char *argv[])
             listen_keyboard_handler();
         } else if (read_attr && FD_ISSET(device_fd, &readset)) {
             FD_CLR(device_fd, &readset);
-            // printf("\033[H\033[J"); /* ASCII escape code to clear the screen
-            // */
+            printf("\033[H\033[J"); /* ASCII escape code to clear the screen
+                                     */
             read(device_fd, display_buf, DRAWBUFFER_SIZE);
-
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    val = (display_buf[i] >> j) & mask;
+                    if (val == 0) {
+                        table[i * 4 + j] = ' ';
+                    } else if (val == 1) {
+                        table[i * 4 + j] = 'X';
+                    } else if (val == 2) {
+                        table[i * 4 + j] = 'O';
+                    }
+                }
+            }
+            draw_board(table);
+            printf("%s", draw_buffer);
         }
     }
 
