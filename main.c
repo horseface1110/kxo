@@ -95,14 +95,21 @@ static DECLARE_WAIT_QUEUE_HEAD(rx_wait);
 /* Insert the whole chess board into the kfifo buffer */
 static void produce_board(uint32_t position)
 {
+    unsigned char *bytes = (unsigned char *) &position;
+    pr_info("aaa position bytes: %02x %02x %02x %02x\n", bytes[0], bytes[1],
+            bytes[2], bytes[3]);
     memcpy(draw_buffer, &position, sizeof(position));
-    pr_info("kxo: send position to user: %u (0x%x)\n", draw_buffer,
-            draw_buffer);
-    unsigned int len =
-        kfifo_in(&rx_fifo, draw_buffer, sizeof(draw_buffer));  /////  TODO:
-    unsigned char val;
-    kfifo_out_peek(&rx_fifo, &val, sizeof(val));
-    pr_info("kxo: send val to user: %u (0x%x)\n", val, val);
+    pr_info("aaa kxo: send position to user: %02x %02x %02x %02x\n",
+            draw_buffer[0], draw_buffer[1], draw_buffer[2], draw_buffer[3]);
+    unsigned int len = kfifo_in(&rx_fifo, draw_buffer,
+                                sizeof(draw_buffer));  //  TODO：傳進去的會壞掉
+    unsigned char peek_buf[4];
+    if (kfifo_len(&rx_fifo) >= 4) {
+        kfifo_out_peek(&rx_fifo, peek_buf, 4);
+        pr_info("aaa peek fifo: %02x %02x %02x %02x\n", peek_buf[0],
+                peek_buf[1], peek_buf[2], peek_buf[3]);
+    }
+
 
     if (unlikely(len < sizeof(draw_buffer)) && printk_ratelimit())
         pr_warn("%s: %zu bytes dropped\n", __func__, sizeof(draw_buffer) - len);
@@ -347,13 +354,12 @@ static void timer_handler(struct timer_list *__timer)
             put_cpu();
 
             mutex_lock(&producer_lock);
-            uint32_t position =
-                0b10110011100011110000110100001110;  // draw_board(table);
+            uint32_t position = draw_board(table);
             mutex_unlock(&producer_lock);
 
             /* Store data to the kfifo buffer */
             mutex_lock(&consumer_lock);
-            pr_info("kxo: [CPU#%d] position: %llu\n", smp_processor_id(),
+            pr_info("aaa kxo: [CPU#%d] position: %llu\n", smp_processor_id(),
                     position);
             produce_board(position);
             mutex_unlock(&consumer_lock);
