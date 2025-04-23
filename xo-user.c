@@ -94,10 +94,11 @@ int main(int argc, char *argv[])
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
 
-    char display_buf[DRAWBUFFER_SIZE];
+    char display_buf;
     fd_set readset;
     int device_fd = open(XO_DEVICE_FILE, O_RDONLY);
     int max_fd = device_fd > STDIN_FILENO ? device_fd : STDIN_FILENO;
+    uint8_t mask = 0b00001111;
     read_attr = true;
     end_attr = false;
     while (!end_attr) {
@@ -116,15 +117,15 @@ int main(int argc, char *argv[])
             listen_keyboard_handler();
         } else if (read_attr && FD_ISSET(device_fd, &readset)) {
             FD_CLR(device_fd, &readset);
-            printf("\033[H\033[J"); /* ASCII escape code to clear the screen
-                                     */
-            read(device_fd, display_buf,
+            // printf("\033[H\033[J"); /* ASCII escape code to clear the screen
+            //                          */
+            read(device_fd, &display_buf,
                  DRAWBUFFER_SIZE);  // TODO：改新的棋盤方式
 
-            // printf("%s\n", draw_buffer);
-            // printf("%d%d", (display_buf[0] << 4 >> 4) % 4 + 'A',
-            // (display_buf[0] << 4 >> 4) / 4);
-            printf("%d", display_buf[0]);
+            // printf("%02x\n", display_buf);
+            printf("%c%d\n", (display_buf & mask) % 4 + 'A',
+                   (display_buf & mask) / 4);
+            printf("player：%d\n", display_buf >> 4);
         }
     }
 
