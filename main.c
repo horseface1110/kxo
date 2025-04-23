@@ -41,6 +41,13 @@ struct kxo_attr {
     rwlock_t lock;
 };
 
+typedef union {
+    uint8_t position : 4;
+    uint8_t player : 1;  // 0：'X'；1：'O'
+} xo_move_t;
+
+static xo_move_t move_my;
+
 static struct kxo_attr attr_obj;
 
 static ssize_t kxo_state_show(struct device *dev,
@@ -93,14 +100,10 @@ static DEFINE_MUTEX(read_lock);
 static DECLARE_WAIT_QUEUE_HEAD(rx_wait);
 
 /* Insert the whole chess board into the kfifo buffer */
-static void produce_board(uint32_t position)
+static void produce_board(xo_move_t position)  // TODO：produce_board
 {
-    unsigned char *bytes = (unsigned char *) &position;
-    pr_info("aaa position bytes: %02x %02x %02x %02x\n", bytes[0], bytes[1],
-            bytes[2], bytes[3]);
     memcpy(draw_buffer, &position, sizeof(position));
-    pr_info("aaa kxo: send position to user: %02x %02x %02x %02x\n",
-            draw_buffer[0], draw_buffer[1], draw_buffer[2], draw_buffer[3]);
+    pr_info("aaa kxo: send position to user: %02x\n", draw_buffer);
     unsigned int len = kfifo_in(&rx_fifo, draw_buffer, sizeof(draw_buffer));
 
 
@@ -125,24 +128,6 @@ static struct circ_buf fast_buf;
 
 static char table[N_GRIDS];
 
-/* Draw the board into draw_buffer */
-static uint32_t draw_board(char *table)
-{
-    uint32_t position = 0;
-    for (int i = 0; i < N_GRIDS; i++) {
-        uint32_t val = 0;
-        if (table[i] == ' ') {
-            val = 0;
-        } else if (table[i] == 'X') {
-            val = 1;
-        } else if (table[i] == 'O') {
-            val = 2;
-        }
-        position |= (val << (i * 2));
-    }
-
-    return position;
-}
 
 /* Clear all data from the circular buffer fast_buf */
 static void fast_buf_clear(void)
@@ -152,7 +137,8 @@ static void fast_buf_clear(void)
 
 /* Workqueue handler: executed by a kernel thread */
 // 把目前棋盤狀態丟給 user space 就呼叫這個
-static void drawboard_work_func(struct work_struct *w)
+static void drawboard_work_func(
+    struct work_struct *w)  // TODO：drawboard_work_func
 {
     int cpu;
 
@@ -176,20 +162,25 @@ static void drawboard_work_func(struct work_struct *w)
     }
     read_unlock(&attr_obj.lock);
 
-    mutex_lock(&producer_lock);
-    uint32_t position = draw_board(table);
-    mutex_unlock(&producer_lock);
-
     /* Store data to the kfifo buffer */
     mutex_lock(&consumer_lock);
-    produce_board(position);
+    produce_board(move_my);
     mutex_unlock(&consumer_lock);
 
     wake_up_interruptible(&rx_wait);
 }
 
+/* Work item: holds a pointer to the function that is going to be executed
+ * asynchronously.
+ */
+static DECLARE_WORK(drawboard_work, drawboard_work_func);
+
 static char turn;
 static int finish;
+
+/* Workqueue for asynchronous bottom-half processing */
+static struct workqueue_struct *kxo_workqueue;
+
 
 static void ai_one_work_func(struct work_struct *w)
 {
@@ -210,8 +201,10 @@ static void ai_one_work_func(struct work_struct *w)
 
     smp_mb();
 
-    if (move != -1)
-        WRITE_ONCE(table[move], 'O');  // TODO：這邊這邊
+    if (move != -1) {
+        move_my.position = move;
+        move_my.player = 0;
+    }
 
     WRITE_ONCE(turn, 'X');
     WRITE_ONCE(finish, 1);
@@ -245,8 +238,11 @@ static void ai_two_work_func(struct work_struct *w)
 
     smp_mb();
 
-    if (move != -1)
-        WRITE_ONCE(table[move], 'X');
+    if (move != -1) {
+        move_my.position = move;
+        move_my.player = 1;
+    }
+
 
     WRITE_ONCE(turn, 'O');
     WRITE_ONCE(finish, 1);
@@ -261,16 +257,8 @@ static void ai_two_work_func(struct work_struct *w)
     queue_work(kxo_workqueue, &drawboard_work);
 }
 
-/* Workqueue for asynchronous bottom-half processing */
-static struct workqueue_struct *kxo_workqueue;
-
-/* Work item: holds a pointer to the function that is going to be executed
- * asynchronously.
- */
-static DECLARE_WORK(drawboard_work, drawboard_work_func);
 static DECLARE_WORK(ai_one_work, ai_one_work_func);
 static DECLARE_WORK(ai_two_work, ai_two_work_func);
-
 
 /* Tasklet handler.
  *
@@ -349,15 +337,9 @@ static void timer_handler(struct timer_list *__timer)
             pr_info("kxo: [CPU#%d] Drawing final board\n", cpu);
             put_cpu();
 
-            mutex_lock(&producer_lock);
-            uint32_t position = draw_board(table);
-            mutex_unlock(&producer_lock);
-
             /* Store data to the kfifo buffer */
             mutex_lock(&consumer_lock);
-            pr_info("aaa kxo: [CPU#%d] position: %llu\n", smp_processor_id(),
-                    position);
-            produce_board(position);
+            produce_board(move_my);
             mutex_unlock(&consumer_lock);
 
             wake_up_interruptible(&rx_wait);
