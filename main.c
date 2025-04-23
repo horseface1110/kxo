@@ -101,8 +101,7 @@ static void produce_board(uint32_t position)
     memcpy(draw_buffer, &position, sizeof(position));
     pr_info("aaa kxo: send position to user: %02x %02x %02x %02x\n",
             draw_buffer[0], draw_buffer[1], draw_buffer[2], draw_buffer[3]);
-    unsigned int len = kfifo_in(&rx_fifo, draw_buffer,
-                                sizeof(draw_buffer));  //  TODO：傳進去的會壞掉
+    unsigned int len = kfifo_in(&rx_fifo, draw_buffer, sizeof(draw_buffer));
 
 
     if (unlikely(len < sizeof(draw_buffer)) && printk_ratelimit())
@@ -152,6 +151,7 @@ static void fast_buf_clear(void)
 }
 
 /* Workqueue handler: executed by a kernel thread */
+// 把目前棋盤狀態丟給 user space 就呼叫這個
 static void drawboard_work_func(struct work_struct *w)
 {
     int cpu;
@@ -211,7 +211,7 @@ static void ai_one_work_func(struct work_struct *w)
     smp_mb();
 
     if (move != -1)
-        WRITE_ONCE(table[move], 'O');
+        WRITE_ONCE(table[move], 'O');  // TODO：這邊這邊
 
     WRITE_ONCE(turn, 'X');
     WRITE_ONCE(finish, 1);
@@ -223,6 +223,7 @@ static void ai_one_work_func(struct work_struct *w)
     pr_info("kxo: [CPU#%d] %s completed in %llu usec\n", cpu, __func__,
             (unsigned long long) nsecs >> 10);
     put_cpu();
+    queue_work(kxo_workqueue, &drawboard_work);
 }
 
 static void ai_two_work_func(struct work_struct *w)
@@ -257,6 +258,7 @@ static void ai_two_work_func(struct work_struct *w)
     pr_info("kxo: [CPU#%d] %s completed in %llu usec\n", cpu, __func__,
             (unsigned long long) nsecs >> 10);
     put_cpu();
+    queue_work(kxo_workqueue, &drawboard_work);
 }
 
 /* Workqueue for asynchronous bottom-half processing */
@@ -268,6 +270,7 @@ static struct workqueue_struct *kxo_workqueue;
 static DECLARE_WORK(drawboard_work, drawboard_work_func);
 static DECLARE_WORK(ai_one_work, ai_one_work_func);
 static DECLARE_WORK(ai_two_work, ai_two_work_func);
+
 
 /* Tasklet handler.
  *
@@ -298,7 +301,6 @@ static void game_tasklet_func(unsigned long __data)
         smp_wmb();
         queue_work(kxo_workqueue, &ai_two_work);
     }
-    queue_work(kxo_workqueue, &drawboard_work);
     tv_end = ktime_get();
 
     nsecs = (s64) ktime_to_ns(ktime_sub(tv_end, tv_start));
@@ -333,14 +335,14 @@ static void timer_handler(struct timer_list *__timer)
     /* Disable interrupts for this CPU to simulate real interrupt context */
     local_irq_disable();
 
-    tv_start = ktime_get();
+    tv_start = ktime_get();  // 記錄當下時間（用於效能統計）
 
-    char win = check_win(table);
+    char win = check_win(table);  // 回傳 ' ' 代表還沒有人贏。
 
     if (win == ' ') {
         ai_game();
         mod_timer(&timer, jiffies + msecs_to_jiffies(delay));
-    } else {
+    } else {  // 有人贏了 畫棋盤
         read_lock(&attr_obj.lock);
         if (attr_obj.display == '1') {
             int cpu = get_cpu();
@@ -361,6 +363,7 @@ static void timer_handler(struct timer_list *__timer)
             wake_up_interruptible(&rx_wait);
         }
 
+        // 若 attr_obj.end == '0'，代表還要繼續玩，reset 棋盤再繼續 timer
         if (attr_obj.end == '0') {
             memset(table, ' ',
                    N_GRIDS); /* Reset the table so the game restart */
@@ -371,7 +374,7 @@ static void timer_handler(struct timer_list *__timer)
 
         pr_info("kxo: %c win!!!\n", win);
     }
-    tv_end = ktime_get();
+    tv_end = ktime_get();  // 計時與效能分析
 
     nsecs = (s64) ktime_to_ns(ktime_sub(tv_end, tv_start));
 

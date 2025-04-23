@@ -131,8 +131,9 @@ int main(int argc, char *argv[])
         FD_SET(STDIN_FILENO, &readset);
         FD_SET(device_fd, &readset);
 
+        // select() 會阻塞，直到其中任一個 fd 可以讀取為止
         int result = select(max_fd + 1, &readset, NULL, NULL, NULL);
-        if (result < 0) {
+        if (result < 0) {  // 看誰可以讀取
             printf("Error with select system call\n");
             exit(1);
         }
