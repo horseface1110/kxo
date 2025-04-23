@@ -6,10 +6,12 @@
 #include <linux/kfifo.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/sysfs.h>
 #include <linux/version.h>
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
+
 
 #include "game.h"
 #include "mcts.h"
@@ -42,11 +44,15 @@ struct kxo_attr {
 };
 
 typedef union {
-    uint8_t position : 4;
-    uint8_t player : 1;  // 0：'X'；1：'O'
+    struct {
+        uint8_t position : 4;
+        uint8_t player : 1;
+        uint8_t reserved : 3;
+    };
+    uint8_t raw;
 } xo_move_t;
 
-static xo_move_t move_my;
+xo_move_t move_my;
 
 static struct kxo_attr attr_obj;
 
@@ -85,7 +91,7 @@ static int major;
 static struct class *kxo_class;
 static struct cdev kxo_cdev;
 
-static char draw_buffer[4];  // 4 bytes is enough to store the position
+static char draw_buffer;  // 4 bytes is enough to store the position
 
 /* Data are stored into a kfifo buffer before passing them to the userspace */
 static DECLARE_KFIFO_PTR(rx_fifo, unsigned char);
@@ -102,15 +108,16 @@ static DECLARE_WAIT_QUEUE_HEAD(rx_wait);
 /* Insert the whole chess board into the kfifo buffer */
 static void produce_board(xo_move_t position)  // TODO：produce_board
 {
-    memcpy(draw_buffer, &position, sizeof(position));
-    pr_info("aaa kxo: send position to user: %02x\n", draw_buffer);
-    unsigned int len = kfifo_in(&rx_fifo, draw_buffer, sizeof(draw_buffer));
+    memcpy(draw_buffer, &position, 1);
+    pr_info("aaa kxo: send position to user: %02x\n", position);
+    // unsigned int len = kfifo_in(&rx_fifo, draw_buffer, sizeof(draw_buffer));
 
 
-    if (unlikely(len < sizeof(draw_buffer)) && printk_ratelimit())
-        pr_warn("%s: %zu bytes dropped\n", __func__, sizeof(draw_buffer) - len);
-    pr_debug("kxo: %s: in %u/%u bytes\n", __func__, len,
-             kfifo_len(&rx_fifo));  // 原本是pr_debug
+    // if (unlikely(len < sizeof(draw_buffer)) && printk_ratelimit())
+    //     pr_warn("%s: %zu bytes dropped\n", __func__, sizeof(draw_buffer) -
+    //     len);
+    // pr_debug("kxo: %s: in %u/%u bytes\n", __func__, len,
+    //          kfifo_len(&rx_fifo));  // 原本是pr_debug
 }
 
 /* Mutex to serialize kfifo writers within the workqueue handler */
