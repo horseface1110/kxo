@@ -210,6 +210,7 @@ static void ai_one_work_func(struct work_struct *w)
     smp_mb();
 
     if (move != -1) {
+        WRITE_ONCE(table[move], 'O');
         move_my.position = move;
         move_my.player = 0;
     }
@@ -247,6 +248,7 @@ static void ai_two_work_func(struct work_struct *w)
     smp_mb();
 
     if (move != -1) {
+        WRITE_ONCE(table[move], 'X');
         move_my.position = move;
         move_my.player = 1;
     }
