@@ -15,6 +15,65 @@
 #define XO_DEVICE_FILE "/dev/kxo"
 #define XO_DEVICE_ATTR_FILE "/sys/class/kxo/kxo/kxo_state"
 
+typedef struct MoveNode {
+    char pos[3];  // 例如 "C1"，記住一定要加\0
+    struct MoveNode *prev;
+    struct MoveNode *next;
+} MoveNode;
+
+typedef struct GameRecord {
+    MoveNode *head;                // 這一盤棋的第一步
+    MoveNode *tail;                // 這一盤棋的最後一步
+    int move_count;                // 記錄總步數
+    struct GameRecord *next_game;  // 可以串成list
+} GameRecord;
+
+void add_move(GameRecord *game, const char *pos)
+{
+    MoveNode *node = malloc(sizeof(MoveNode));
+    strncpy(node->pos, pos, 3);  // 保險起見3
+    node->pos[2] = '\0';
+    node->next = NULL;
+    node->prev = game->tail;
+
+    if (game->tail) {
+        game->tail->next = node;
+    } else {
+        game->head = node;  // 第一步
+    }
+    game->tail = node;
+    game->move_count++;
+}
+
+void print_game(GameRecord *game)
+{
+    MoveNode *cur = game->head;
+    while (cur->next) {
+        printf("%s ->", cur->pos);
+        cur = cur->next;
+    }
+    printf("%s", cur->pos);
+    printf("\n");
+}
+
+GameRecord *all_games_head = NULL;  // 多盤棋的起點
+GameRecord *all_games_tail = NULL;  // 多盤棋的終點
+
+GameRecord *add_new_game()
+{
+    GameRecord *new_game = calloc(1, sizeof(GameRecord));  // calloc 自動清 0
+    // 把新棋局加到串列尾端
+    if (!all_games_head) {
+        all_games_head = all_games_tail = new_game;
+    } else {
+        all_games_tail->next_game = new_game;
+        all_games_tail = new_game;
+    }
+    return new_game;  // 傳回這一盤的指標，後面可以繼續 add_move
+}
+
+
+
 static bool status_check(void)
 {
     FILE *fp = fopen(XO_STATUS_FILE, "r");
@@ -78,6 +137,13 @@ static void listen_keyboard_handler(void)
             write(attr_fd, buf, 6);
             printf(
                 "Stopping the kernel space tic-tac-toe game...\n");  // TODO：這邊印出多個下棋順序
+            GameRecord *cur = all_games_head;
+            int idx = 1;
+            while (cur) {
+                printf("Game #%d Moves: ", idx++);
+                print_game(cur);
+                cur = cur->next_game;
+            }
             break;
         }
     }
@@ -129,6 +195,10 @@ int main(int argc, char *argv[])
     read_attr = true;
     end_attr = false;
     memset(table, ' ', sizeof(table));  // 初始化table
+    GameRecord *game = add_new_game();
+    all_games_head = game;
+
+
     while (!end_attr) {
         FD_ZERO(&readset);
         FD_SET(STDIN_FILENO, &readset);
@@ -150,6 +220,8 @@ int main(int argc, char *argv[])
             read(device_fd, &display_buf, 1);
             if (display_buf >> 5) {
                 memset(table, ' ', sizeof(table));  // 初始化table
+                game->next_game = add_new_game();
+                game = game->next_game;
             }
 
             int posi = display_buf & mask;
@@ -157,6 +229,9 @@ int main(int argc, char *argv[])
             draw_board(table);
             printf("%s\n", draw_buffer);
 
+            char buf[3];
+            snprintf(buf, sizeof(buf), "%c%d\0", posi % 4 + 'A', posi / 4);
+            add_move(game, buf);
             printf("%c%d  ", posi % 4 + 'A', posi / 4);
         }
     }
