@@ -46,7 +46,7 @@ struct kxo_attr {
 typedef union {
     struct {
         uint8_t position : 4;
-        uint8_t player : 1;
+        uint8_t player : 1;  // 0：O；1：X
         uint8_t win : 3;
     };
     uint8_t raw;
@@ -352,9 +352,8 @@ static void timer_handler(struct timer_list *__timer)
             int cpu = get_cpu();
             pr_info("kxo: [CPU#%d] Drawing final board\n", cpu);
             put_cpu();
-            pr_info("ccc win");
             /* Store data to the kfifo buffer */
-            move_my.win = 1;  // 表示有人贏了
+            move_my.win = 3;  // 表示有人贏了
             mutex_lock(&consumer_lock);
             produce_board(move_my);
             mutex_unlock(&consumer_lock);

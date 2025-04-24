@@ -88,6 +88,30 @@ static char draw_buffer[DRAWBUFFER_SIZE];
 static char table[N_GRIDS];
 
 
+/* Draw the board into draw_buffer */
+static int draw_board(char *table)
+{
+    int i = 0, k = 0;
+    draw_buffer[i++] = '\n';
+
+    draw_buffer[i++] = '\n';
+
+    while (i < DRAWBUFFER_SIZE) {
+        for (int j = 0; j < (BOARD_SIZE << 1) - 1 && k < N_GRIDS; j++) {
+            draw_buffer[i++] = j & 1 ? '|' : table[k++];
+        }
+        draw_buffer[i++] = '\n';
+
+        for (int j = 0; j < (BOARD_SIZE << 1) - 1; j++) {
+            draw_buffer[i++] = '-';
+        }
+        draw_buffer[i++] = '\n';
+    }
+
+    return 0;
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -104,6 +128,7 @@ int main(int argc, char *argv[])
     uint8_t mask = 0b00001111;
     read_attr = true;
     end_attr = false;
+    memset(table, ' ', sizeof(table));  // 初始化table
     while (!end_attr) {
         FD_ZERO(&readset);
         FD_SET(STDIN_FILENO, &readset);
@@ -120,14 +145,19 @@ int main(int argc, char *argv[])
             listen_keyboard_handler();
         } else if (read_attr && FD_ISSET(device_fd, &readset)) {
             FD_CLR(device_fd, &readset);
-            // printf("\033[H\033[J"); /* ASCII escape code to clear the screen
-            //                          */
-            read(device_fd, &display_buf,
-                 DRAWBUFFER_SIZE);  // TODO：改新的棋盤方式
+            printf("\033[H\033[J"); /* ASCII escape code to clear the screen
+                                     */
+            read(device_fd, &display_buf, 1);
+            if (display_buf >> 5) {
+                memset(table, ' ', sizeof(table));  // 初始化table
+            }
 
-            printf("%c%d\n", (display_buf & mask) % 4 + 'A',
-                   (display_buf & mask) / 4);
-            printf("player：%d\n", display_buf >> 4);
+            int posi = display_buf & mask;
+            table[posi] = (display_buf >> 4) ? 'O' : 'X';
+            draw_board(table);
+            printf("%s\n", draw_buffer);
+
+            printf("%c%d  ", posi % 4 + 'A', posi / 4);
         }
     }
 
