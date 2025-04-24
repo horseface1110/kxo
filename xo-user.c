@@ -76,7 +76,8 @@ static void listen_keyboard_handler(void)
             read_attr = false;
             end_attr = true;
             write(attr_fd, buf, 6);
-            printf("Stopping the kernel space tic-tac-toe game...\n");
+            printf(
+                "Stopping the kernel space tic-tac-toe game...\n");  // TODO：這邊印出多個下棋順序
             break;
         }
     }
@@ -85,6 +86,8 @@ static void listen_keyboard_handler(void)
 
 static char draw_buffer[DRAWBUFFER_SIZE];
 static char table[N_GRIDS];
+
+
 
 int main(int argc, char *argv[])
 {
@@ -122,7 +125,6 @@ int main(int argc, char *argv[])
             read(device_fd, &display_buf,
                  DRAWBUFFER_SIZE);  // TODO：改新的棋盤方式
 
-            // printf("%02x\n", display_buf);
             printf("%c%d\n", (display_buf & mask) % 4 + 'A',
                    (display_buf & mask) / 4);
             printf("player：%d\n", display_buf >> 4);

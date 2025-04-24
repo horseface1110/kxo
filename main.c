@@ -47,7 +47,7 @@ typedef union {
     struct {
         uint8_t position : 4;
         uint8_t player : 1;
-        uint8_t reserved : 3;
+        uint8_t win : 3;
     };
     uint8_t raw;
 } xo_move_t;
@@ -135,6 +135,7 @@ static DEFINE_MUTEX(consumer_lock);
 static struct circ_buf fast_buf;
 
 static char table[N_GRIDS];
+int now = 0;
 
 
 /* Clear all data from the circular buffer fast_buf */
@@ -172,6 +173,8 @@ static void drawboard_work_func(
 
     /* Store data to the kfifo buffer */
     mutex_lock(&consumer_lock);
+    pr_info("ccc now = %d, player%d：%d", now, move_my.player,
+            move_my.position);
     produce_board(move_my);
     mutex_unlock(&consumer_lock);
 
@@ -206,6 +209,7 @@ static void ai_one_work_func(struct work_struct *w)
     mutex_lock(&producer_lock);
     int move;
     WRITE_ONCE(move, mcts(table, 'O'));
+    pr_info("bbb player1：%d, now：%d", move, now++);
 
     smp_mb();
 
@@ -214,6 +218,7 @@ static void ai_one_work_func(struct work_struct *w)
         move_my.position = move;
         move_my.player = 0;
     }
+    drawboard_work_func(w);
 
     WRITE_ONCE(turn, 'X');
     WRITE_ONCE(finish, 1);
@@ -225,7 +230,7 @@ static void ai_one_work_func(struct work_struct *w)
     pr_info("kxo: [CPU#%d] %s completed in %llu usec\n", cpu, __func__,
             (unsigned long long) nsecs >> 10);
     put_cpu();
-    queue_work(kxo_workqueue, &drawboard_work);
+    // queue_work(kxo_workqueue, &drawboard_work);
 }
 
 static void ai_two_work_func(struct work_struct *w)
@@ -244,6 +249,7 @@ static void ai_two_work_func(struct work_struct *w)
     mutex_lock(&producer_lock);
     int move;
     WRITE_ONCE(move, negamax_predict(table, 'X').move);
+    pr_info("bbb player2：%d, now：%d", move, now++);
 
     smp_mb();
 
@@ -252,7 +258,7 @@ static void ai_two_work_func(struct work_struct *w)
         move_my.position = move;
         move_my.player = 1;
     }
-
+    drawboard_work_func(w);
 
     WRITE_ONCE(turn, 'O');
     WRITE_ONCE(finish, 1);
@@ -264,7 +270,7 @@ static void ai_two_work_func(struct work_struct *w)
     pr_info("kxo: [CPU#%d] %s completed in %llu usec\n", cpu, __func__,
             (unsigned long long) nsecs >> 10);
     put_cpu();
-    queue_work(kxo_workqueue, &drawboard_work);
+    // queue_work(kxo_workqueue, &drawboard_work);
 }
 
 static DECLARE_WORK(ai_one_work, ai_one_work_func);
@@ -346,11 +352,13 @@ static void timer_handler(struct timer_list *__timer)
             int cpu = get_cpu();
             pr_info("kxo: [CPU#%d] Drawing final board\n", cpu);
             put_cpu();
-
+            pr_info("ccc win");
             /* Store data to the kfifo buffer */
+            move_my.win = 1;  // 表示有人贏了
             mutex_lock(&consumer_lock);
             produce_board(move_my);
             mutex_unlock(&consumer_lock);
+            move_my.win = 0;
 
             wake_up_interruptible(&rx_wait);
         }
