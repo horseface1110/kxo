@@ -36,4 +36,5 @@ extern const line_t lines[4];
 
 int *available_moves(const char *table);
 char check_win(const char *t);
-fixed_point_t calculate_win_value(char win, char player);
+fixed_point_t calculate_win_value(char win, char player);  // 居然是定點數
+void draw_board(const char *t);

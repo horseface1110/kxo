@@ -17,6 +17,8 @@
 #include "mcts.h"
 #include "negamax.h"
 
+#include "agents/reinforcement_learning.h"
+
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
 MODULE_DESCRIPTION("In-kernel Tic-Tac-Toe game engine");
@@ -120,6 +122,9 @@ static void produce_board(xo_move_t position)  // TODO：produce_board
     //          kfifo_len(&rx_fifo));  // 原本是pr_debug
 }
 
+// 玩遊戲的
+int run_tictactoe_match(char *table, char ai_player);
+
 /* Mutex to serialize kfifo writers within the workqueue handler */
 static DEFINE_MUTEX(producer_lock);
 
@@ -178,6 +183,7 @@ static void drawboard_work_func(
     wake_up_interruptible(&rx_wait);
 }
 
+
 /* Work item: holds a pointer to the function that is going to be executed
  * asynchronously.
  */
@@ -214,7 +220,7 @@ static void ai_one_work_func(struct work_struct *w)
         move_my.position = move;
         move_my.player = 0;
     }
-    drawboard_work_func(w);
+    drawboard_work_func(w);  // 傳資料到user
 
     WRITE_ONCE(turn, 'X');
     WRITE_ONCE(finish, 1);
@@ -226,7 +232,6 @@ static void ai_one_work_func(struct work_struct *w)
     pr_info("kxo: [CPU#%d] %s completed in %llu usec\n", cpu, __func__,
             (unsigned long long) nsecs >> 10);
     put_cpu();
-    // queue_work(kxo_workqueue, &drawboard_work);
 }
 
 static void ai_two_work_func(struct work_struct *w)
@@ -265,7 +270,6 @@ static void ai_two_work_func(struct work_struct *w)
     pr_info("kxo: [CPU#%d] %s completed in %llu usec\n", cpu, __func__,
             (unsigned long long) nsecs >> 10);
     put_cpu();
-    // queue_work(kxo_workqueue, &drawboard_work);
 }
 
 static DECLARE_WORK(ai_one_work, ai_one_work_func);
@@ -307,6 +311,19 @@ static void game_tasklet_func(unsigned long __data)
     pr_info("kxo: [CPU#%d] %s in_softirq: %llu usec\n", smp_processor_id(),
             __func__, (unsigned long long) nsecs >> 10);
 }
+
+int run_tictactoe_match(char *table, char ai_player)
+{
+    rl_agent_t agent;
+    unsigned int state_num = 1;
+    CALC_STATE_NUM(state_num);
+    init_rl_agent(&agent, state_num, 'O');
+    load_model(&agent, state_num, MODEL_NAME);
+
+    int move = play_rl(table, &agent);
+    return move;
+}
+
 
 /* Tasklet for asynchronous bottom-half processing in softirq context */
 static DECLARE_TASKLET_OLD(game_tasklet, game_tasklet_func);
