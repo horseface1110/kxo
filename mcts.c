@@ -135,7 +135,8 @@ static fixed_point_t simulate(const char *table, char player)
         int n_moves = 0;
         while (n_moves < N_GRIDS && moves[n_moves] != -1)
             ++n_moves;
-        int move = moves[xoro_next(&(mcts_obj.xoro_obj)) % n_moves];
+        int move =
+            moves[xoro_next(&(mcts_obj.xoro_obj)) % n_moves];  // 隨機下棋
         kfree(moves);
         temp_table[move] = current_player;
         char win;
@@ -146,17 +147,23 @@ static fixed_point_t simulate(const char *table, char player)
     return (fixed_point_t) (1UL << (FIXED_SCALE_BITS - 1));
 }
 
+/*目的是把模擬（simulation/rollout）結果往樹的上層節點逐層累加，
+ *讓每一層都能獲得該分支下的勝率資訊。這是 MCTS 的標準步驟之一。
+ */
+
 static void backpropagate(struct node *node, fixed_point_t score)
 {
     while (node) {
         node->n_visits++;
         node->score += score;
         node = node->parent;
-        score = 1 - score;
+        score = 1 - score;  // 要給父節點(對手)的分數
     }
 }
 
-static int expand(struct node *node, const char *table)
+static int expand(
+    struct node *node,
+    const char *table)  // 產生所有可能的下一步，回傳還有幾個位置可以落子
 {
     int *moves = available_moves(table);
     int n_moves = 0;

@@ -50,13 +50,15 @@ char check_win(const char *t)
 fixed_point_t calculate_win_value(char win, char player)
 {
     if (win == player)
-        return 1U << FIXED_SCALE_BITS;
-    if (win == (player ^ 'O' ^ 'X'))
-        return 0U;
-    return 1U << (FIXED_SCALE_BITS - 1);
+        return 1U << FIXED_SCALE_BITS;  // 滿分
+    if (win == (player ^ 'O' ^ 'X'))    // 對手的那一方(x ^ O ^ X =
+                                      // O)很trick的技巧，二元狀態互換，背起來
+        return 0U;                        // 零分
+    return 1U << (FIXED_SCALE_BITS - 1);  // 和局，滿分的一半
 }
 
-int *available_moves(const char *table)
+int *available_moves(
+    const char *table)  // moves：儲存目前可落子的位置的編號，最後一格為-1為-1
 {
     int *moves = kzalloc(N_GRIDS * sizeof(int), GFP_KERNEL);
     int m = 0;

@@ -109,7 +109,6 @@ static DECLARE_WAIT_QUEUE_HEAD(rx_wait);
 static void produce_board(xo_move_t position)  // TODO：produce_board
 {
     memcpy(&draw_buffer, &position, 1);
-    pr_info("aaa kxo: send position to user: %02x\n", draw_buffer);
     /* unsigned int len = */ kfifo_in(&rx_fifo, &draw_buffer,
                                       sizeof(draw_buffer));
 
@@ -173,8 +172,6 @@ static void drawboard_work_func(
 
     /* Store data to the kfifo buffer */
     mutex_lock(&consumer_lock);
-    pr_info("ccc now = %d, player%d：%d", now, move_my.player,
-            move_my.position);
     produce_board(move_my);
     mutex_unlock(&consumer_lock);
 
@@ -208,8 +205,7 @@ static void ai_one_work_func(struct work_struct *w)
     tv_start = ktime_get();
     mutex_lock(&producer_lock);
     int move;
-    WRITE_ONCE(move, mcts(table, 'O'));
-    pr_info("bbb player1：%d, now：%d", move, now++);
+    WRITE_ONCE(move, mcts(table, 'O'));  // 呼叫要使用的演算法
 
     smp_mb();
 
@@ -249,7 +245,6 @@ static void ai_two_work_func(struct work_struct *w)
     mutex_lock(&producer_lock);
     int move;
     WRITE_ONCE(move, negamax_predict(table, 'X').move);
-    pr_info("bbb player2：%d, now：%d", move, now++);
 
     smp_mb();
 

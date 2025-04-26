@@ -11,7 +11,7 @@ static inline void seed(struct state_array *obj, u64 s0, u64 s1)
     obj->array[1] = s1;
 }
 
-u64 xoro_next(struct state_array *obj)
+u64 xoro_next(struct state_array *obj)  // 亂數
 {
     const u64 s0 = obj->array[0];
     u64 s1 = obj->array[1];
