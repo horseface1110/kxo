@@ -113,7 +113,8 @@ static void raw_mode_enable(void)
 
 static bool read_attr, end_attr;
 
-static void listen_keyboard_handler(void)
+static void listen_keyboard_handler(uint8_t display_buf,
+                                    GameRecord **current_game)
 {
     int attr_fd = open(XO_DEVICE_ATTR_FILE, O_RDWR);
     char input;
@@ -126,8 +127,9 @@ static void listen_keyboard_handler(void)
             buf[0] = (buf[0] - '0') ? '0' : '1';
             read_attr ^= 1;
             write(attr_fd, buf, 6);
-            if (!read_attr)
+            if (!read_attr) {
                 printf("Stopping to display the chess board...\n");
+            }
             break;
         case 17: /* Ctrl-Q */
             read(attr_fd, buf, 6);
@@ -178,6 +180,34 @@ static int draw_board(char *table)
 }
 
 
+void process_move(uint8_t display_buf, GameRecord **current_game)
+{
+    printf("\033[H\033[J"); /* ASCII escape code to clear the screen
+                             */
+    static uint8_t mask = 0b00001111;
+    int posi = display_buf & mask;
+
+    printf("display_buf >> 5 = %d, read_attr = %d", display_buf >> 5,
+           read_attr);
+    if (display_buf >> 5) {
+        memset(table, ' ', sizeof(table));  // 清空棋盤
+        (*current_game)->next_game = add_new_game();
+        *current_game = (*current_game)->next_game;
+    }
+
+    table[posi] = (display_buf >> 4) ? 'O' : 'X';
+    if (read_attr) {
+        draw_board(table);
+        printf("%s\n", draw_buffer);
+    }
+
+    char buf[3];
+    snprintf(buf, sizeof(buf), "%c%d", posi % 4 + 'A', posi / 4);
+    add_move(*current_game, buf);
+    printf("%c%d  ", posi % 4 + 'A', posi / 4);
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -191,7 +221,6 @@ int main(int argc, char *argv[])
     fd_set readset;
     int device_fd = open(XO_DEVICE_FILE, O_RDONLY);
     int max_fd = device_fd > STDIN_FILENO ? device_fd : STDIN_FILENO;
-    uint8_t mask = 0b00001111;
     read_attr = true;
     end_attr = false;
     memset(table, ' ', sizeof(table));  // 初始化table
@@ -212,27 +241,12 @@ int main(int argc, char *argv[])
         }
         if (FD_ISSET(STDIN_FILENO, &readset)) {
             FD_CLR(STDIN_FILENO, &readset);
-            listen_keyboard_handler();
-        } else if (read_attr && FD_ISSET(device_fd, &readset)) {
+            listen_keyboard_handler(display_buf, &game);
+        } else if (FD_ISSET(device_fd, &readset)) {
             FD_CLR(device_fd, &readset);
-            printf("\033[H\033[J"); /* ASCII escape code to clear the screen
-                                     */
+
             read(device_fd, &display_buf, 1);
-            if (display_buf >> 5) {
-                memset(table, ' ', sizeof(table));  // 初始化table
-                game->next_game = add_new_game();
-                game = game->next_game;
-            }
-
-            int posi = display_buf & mask;
-            table[posi] = (display_buf >> 4) ? 'O' : 'X';
-            draw_board(table);
-            printf("%s\n", draw_buffer);
-
-            char buf[3];
-            snprintf(buf, sizeof(buf), "%c%d\0", posi % 4 + 'A', posi / 4);
-            add_move(game, buf);
-            printf("%c%d  ", posi % 4 + 'A', posi / 4);
+            process_move(display_buf, &game);
         }
     }
 
