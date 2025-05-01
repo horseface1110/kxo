@@ -17,7 +17,6 @@
 #include "mcts.h"
 #include "negamax.h"
 
-#include "agents/reinforcement_learning.h"
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -168,12 +167,12 @@ static void drawboard_work_func(
     pr_info("kxo: [CPU#%d] %s\n", cpu, __func__);
     put_cpu();
 
-    read_lock(&attr_obj.lock);
-    if (attr_obj.display == '0') {
-        read_unlock(&attr_obj.lock);
-        return;
-    }
-    read_unlock(&attr_obj.lock);
+    // read_lock(&attr_obj.lock);
+    // if (attr_obj.display == '0') {
+    //     pr_info("drawboard_work_func attr_obj.display ==
+    //     %d",attr_obj.display); read_unlock(&attr_obj.lock); return;
+    // }
+    // read_unlock(&attr_obj.lock);
 
     /* Store data to the kfifo buffer */
     mutex_lock(&consumer_lock);
@@ -360,19 +359,18 @@ static void timer_handler(struct timer_list *__timer)
         mod_timer(&timer, jiffies + msecs_to_jiffies(delay));
     } else {  // 有人贏了 畫棋盤
         read_lock(&attr_obj.lock);
-        if (attr_obj.display == '1') {
-            int cpu = get_cpu();
-            pr_info("kxo: [CPU#%d] Drawing final board\n", cpu);
-            put_cpu();
-            /* Store data to the kfifo buffer */
-            move_my.win = 3;  // 表示有人贏了
-            mutex_lock(&consumer_lock);
-            produce_board(move_my);
-            mutex_unlock(&consumer_lock);
-            move_my.win = 0;
 
-            wake_up_interruptible(&rx_wait);
-        }
+        int cpu = get_cpu();
+        pr_info("kxo: [CPU#%d] Drawing final board\n", cpu);
+        put_cpu();
+        /* Store data to the kfifo buffer */
+        move_my.win = 3;  // 表示有人贏了
+        mutex_lock(&consumer_lock);
+        produce_board(move_my);
+        mutex_unlock(&consumer_lock);
+        move_my.win = 0;
+
+        wake_up_interruptible(&rx_wait);
 
         // 若 attr_obj.end == '0'，代表還要繼續玩，reset 棋盤再繼續 timer
         if (attr_obj.end == '0') {
