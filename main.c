@@ -311,18 +311,6 @@ static void game_tasklet_func(unsigned long __data)
             __func__, (unsigned long long) nsecs >> 10);
 }
 
-int run_tictactoe_match(char *table, char ai_player)
-{
-    rl_agent_t agent;
-    unsigned int state_num = 1;
-    CALC_STATE_NUM(state_num);
-    init_rl_agent(&agent, state_num, 'O');
-    load_model(&agent, state_num, MODEL_NAME);
-
-    int move = play_rl(table, &agent);
-    return move;
-}
-
 
 /* Tasklet for asynchronous bottom-half processing in softirq context */
 static DECLARE_TASKLET_OLD(game_tasklet, game_tasklet_func);
