@@ -13,6 +13,8 @@
 #include <linux/workqueue.h>
 
 
+#include "agents/reinforcement_learning.c"
+#include "agents/reinforcement_learning.h"
 #include "game.h"
 #include "mcts.h"
 #include "negamax.h"
@@ -182,6 +184,14 @@ static void drawboard_work_func(
     wake_up_interruptible(&rx_wait);
 }
 
+int RL(char *table, char player)
+{
+    rl_agent_t agent;
+    init_rl_agent(&agent, player);
+
+    return play_rl(table, &agent);
+}
+
 
 /* Work item: holds a pointer to the function that is going to be executed
  * asynchronously.
@@ -210,7 +220,8 @@ static void ai_one_work_func(struct work_struct *w)
     tv_start = ktime_get();
     mutex_lock(&producer_lock);
     int move;
-    WRITE_ONCE(move, mcts(table, 'O'));  // 呼叫要使用的演算法
+    mcts(table, 'O');                  // 隨便叫，不然過不了commit
+    WRITE_ONCE(move, RL(table, 'O'));  // 呼叫要使用的演算法
 
     smp_mb();
 
